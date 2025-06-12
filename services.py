@@ -11,6 +11,7 @@ from PIL import Image
 from moviepy.editor import VideoFileClip
 from urllib.parse import unquote
 from database import get_db_connection, execute_query, execute_query_one
+from utils.email_utils import send_plain_mail, send_passenger_complain_email
 # from email_service import send_passenger_complain_email
 
 # Configure logging
@@ -233,14 +234,14 @@ def create_complaint(complaint_data):
                     train = execute_query_one(train_conn, train_query, (complaint_data['train_id'],))
                     train_conn.close()
                     if train:
-                        train_depo = train.get('depot', '')
+                        train_depo = train.get('Depot', '')
                 elif complaint_data.get('train_number'):
                     train_query = "SELECT * FROM trains_traindetails WHERE train_no = %s"
                     train_conn = get_db_connection()
                     train = execute_query_one(train_conn, train_query, (complaint_data['train_number'],))
                     train_conn.close()
                     if train:
-                        train_depo = train.get('depot', '')
+                        train_depo = train.get('Depot', '')
                 
                 details = {
                     'train_no': complaint_data.get('train_number', ''),
@@ -257,7 +258,7 @@ def create_complaint(complaint_data):
                 }
                 
                 logger.info(f"Sending email for complaint {complaint_id} to war room users")
-                # send_passenger_complain_email(details)
+                send_passenger_complain_email(details)
                 logger.info(f"Email sent successfully for complaint {complaint_id}")
             except Exception as e:
                 logger.error(f"Email thread failure for complaint {complaint_id}: {str(e)}")
