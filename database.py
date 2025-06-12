@@ -5,18 +5,23 @@ import psycopg2.extras
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, date
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+
+print("DB User:", os.getenv("POSTGRES_USER"))
+
 # Database configuration
 DB_CONFIG = {
-    'host': os.getenv('POSTGRES_HOST', '34.131.104.1'),
+    'host': os.getenv('POSTGRES_HOST', 'localhost'),
     'port': int(os.getenv('POSTGRES_PORT', 5432)),
-    'user': os.getenv('POSTGRES_USER', 'sarvasuvidhaen'),
-    'password': os.getenv('POSTGRES_PASSWORD', 'b2684f613a70ba2124facf489b1d9ef3c0548017'),
-    'database': os.getenv('POSTGRES_DB', 'local2')
+    'user': os.getenv('POSTGRES_USER', 'postgres'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'password'),
+    'database': os.getenv('POSTGRES_DB', 'rail_sathi_db')
 }
 
 def get_db_connection():
