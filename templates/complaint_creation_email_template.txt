@@ -1,0 +1,29 @@
+Passenger Complaint Submitted
+
+A new passenger complaint has been received.
+
+Complain ID   : {{ complain_id }}
+Submitted At  : {{ created_at }}
+
+Passenger Info:
+---------------
+Name           : {{ passenger_name }}
+Phone Number   : {{ user_phone_number }}
+
+Travel Details:
+---------------
+Train Number   : {{ train_no }}
+Train Name     : {{ train_name }}
+Coach          : {{ coach }}
+Berth Number   : {{ berth }}
+PNR            : {{ pnr }}
+
+Complaint Details:
+------------------
+Description    : {{ description }}
+
+Train Depot    : {{ train_depo }}
+
+
+Regards,  
+Team RailSathi
