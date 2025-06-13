@@ -40,7 +40,8 @@ app.add_middleware(
 
 @app.get("/rs_microservice")
 async def root():
-    return {"message": "Rail Sathi Complaint API is running"}
+    return {"message": "Rail Sathi Microservice is running"}
+
 
 class RailSathiComplainMediaResponse(BaseModel):
     id: int
