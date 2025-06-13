@@ -13,7 +13,8 @@ from services import (
     upload_file_thread
 )
 
-app = FastAPI(title="Rail Sathi Complaint API", version="1.0.0")
+app = FastAPI(root_path="/rs_microservice")
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
