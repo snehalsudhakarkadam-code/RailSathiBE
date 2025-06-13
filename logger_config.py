@@ -1,18 +1,20 @@
-# logger_config.py
 import logging
+import os
 
-# Configure the logger
-logger = logging.getLogger("rail_sathi_logger")
+os.makedirs("logs", exist_ok=True)
+
+logger = logging.getLogger("rs_microservice")
 logger.setLevel(logging.INFO)
 
-# Create handlers
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-
-# Formatter for the logs
-formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s")
-console_handler.setFormatter(formatter)
-
-# Add the handler to the logger
 if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(console_handler)
+
+    file_handler = logging.FileHandler("logs/rs_microservice.log")
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+
+logger.propagate = False
