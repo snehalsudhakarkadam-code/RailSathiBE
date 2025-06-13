@@ -36,3 +36,4 @@ ENV/
 # Logs
 *.log
 logs/
+sa.json

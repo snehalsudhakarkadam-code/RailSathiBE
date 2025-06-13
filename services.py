@@ -12,13 +12,30 @@ from moviepy.editor import VideoFileClip
 from urllib.parse import unquote
 from database import get_db_connection, execute_query, execute_query_one
 from utils.email_utils import send_plain_mail, send_passenger_complain_email
-# from email_service import send_passenger_complain_email
+from dotenv import load_dotenv
+from fastapi import FastAPI, Form, File, UploadFile, HTTPException
+import asyncio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-GCS_BUCKET_NAME = "sanchalak-media-bucket1"
+load_dotenv()
+
+# Configuration from environment
+GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'sanchalak-media-bucket1')
+PROJECT_ID = os.getenv('PROJECT_ID', 'sanchalak-423912')
+
+
+def get_gcs_client():
+    """Get authenticated GCS client using environment variables"""
+    try:
+        # storage.Client() will automatically use GOOGLE_APPLICATION_CREDENTIALS from .env
+        client = storage.Client(project=PROJECT_ID)
+        return client
+    except Exception as e:
+        print(f"Failed to create GCS client: {e}")
+        raise
 
 def get_valid_filename(filename):
     """
@@ -40,7 +57,8 @@ def process_media_file_upload(file_content, file_format, complain_id, media_type
         unique_id = str(uuid.uuid4())[:5]
         full_file_name = f"rail_sathi_complain_{complain_id}_{sanitize_timestamp(created_at)}_{unique_id}.{file_format}"
 
-        client = storage.Client()
+        # Use the authenticated client
+        client = get_gcs_client()
         bucket = client.bucket(GCS_BUCKET_NAME)
         blob = None
 
@@ -55,7 +73,7 @@ def process_media_file_upload(file_content, file_format, complain_id, media_type
             key = f"rail_sathi_complain_images/{full_file_name}"
             blob = bucket.blob(key)
             blob.upload_from_file(new_file, content_type='image/jpeg')
-            logger.info(f"rail_sathi_complain_images Image uploaded: {full_file_name}")
+            print(f"rail_sathi_complain_images Image uploaded: {full_file_name}")
 
         elif media_type == "video":
             try:
@@ -74,15 +92,15 @@ def process_media_file_upload(file_content, file_format, complain_id, media_type
                     clip.write_videofile(compressed_file_path, codec='libx264', bitrate=target_bitrate)
                     clip.close()
                 except Exception as e:
-                    logger.error(f"Error compressing video: {e}")
+                    print(f"Error compressing video: {e}")
                 
                 key = f"rail_sathi_complain_videos/{full_file_name}"
                 blob = bucket.blob(key)
                 with open(compressed_file_path, 'rb') as temp_file:
                     blob.upload_from_file(temp_file, content_type='video/mp4')
-                logger.info(f"rail_sathi_complain_videos Video uploaded: {full_file_name}")
+                print(f"rail_sathi_complain_videos Video uploaded: {full_file_name}")
             except Exception as e:
-                logger.error(f'Error while storing video: {repr(e)}')
+                print(f'Error while storing video: {repr(e)}')
             finally:
                 if os.path.exists(compressed_file_path):
                     os.remove(compressed_file_path)
@@ -92,60 +110,171 @@ def process_media_file_upload(file_content, file_format, complain_id, media_type
         if blob:
             try:
                 url = blob.public_url
-                logger.info(f"Uploaded file URL: {url}")
+                print(f"Uploaded file URL: {url}")
                 return url
             except Exception as e:
-                logger.error(f"Failed to get public URL: {e}")
+                print(f"Failed to get public URL: {e}")
                 return None
         else:
-            logger.error("Upload failed (blob is None)")
+            print("Upload failed (blob is None)")
             return None
     except Exception as e:
-        logger.error(f"Error processing media file: {e}")
+        print(f"Error processing media file: {e}")
         raise e
 
 def upload_file_thread(file_obj, complain_id, user):
-    """Upload file in a separate thread"""
+    """Upload file in a separate thread with improved error handling"""
     try:
-        # For FastAPI UploadFile
+        logger.info(f"Starting file upload for complaint {complain_id}, file: {getattr(file_obj, 'filename', 'unknown')}")
+        
+        # Read file content - handle both FastAPI UploadFile and regular file objects
         if hasattr(file_obj, 'read'):
+            if asyncio.iscoroutinefunction(file_obj.read):
+                # For async UploadFile, we need to handle this differently
+                logger.error("Async file read not supported in thread context")
+                return
             file_content = file_obj.read()
         else:
             file_content = file_obj.file.read()
         
-        filename = file_obj.filename
+        logger.info(f"File content size: {len(file_content)} bytes")
+        
+        filename = getattr(file_obj, 'filename', 'unknown')
+        content_type = getattr(file_obj, 'content_type', 'application/octet-stream')
+        
+        logger.info(f"Processing file: {filename}, content_type: {content_type}")
+        
         _, ext = os.path.splitext(filename)
         ext = ext.lstrip('.').lower()
-
-        content_type = file_obj.content_type
+        
+        # Determine media type
         if content_type.startswith("image"):
             media_type = "image"
         elif content_type.startswith("video"):
             media_type = "video"
         else:
-            logger.error(f"Unsupported media type for file: {filename}")
+            logger.warning(f"Unsupported media type for file: {filename}, content_type: {content_type}")
             return
 
+        logger.info(f"Uploading {media_type} file: {filename}")
+        
+        # Upload file
         uploaded_url = process_media_file_upload(file_content, ext, complain_id, media_type)
+        
         if uploaded_url:
+            logger.info(f"File uploaded successfully: {uploaded_url}")
+            
             # Insert media record into database
             conn = get_db_connection()
-            query = """
-                INSERT INTO rail_sathi_railsathicomplainmedia 
-                (complain_id, media_type, media_url, created_by, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            now = datetime.now()
-            cursor = conn.cursor()
-            cursor.execute(query, (complain_id, media_type, uploaded_url, user, now, now))
-            conn.commit()
-            conn.close()
-            logger.info(f"File uploaded and media record created for complaint {complain_id}: {uploaded_url}")
+            try:
+                query = """
+                    INSERT INTO rail_sathi_railsathicomplainmedia 
+                    (complain_id, media_type, media_url, created_by, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                now = datetime.now()
+                cursor = conn.cursor()
+                cursor.execute(query, (complain_id, media_type, uploaded_url, user, now, now))
+                conn.commit()
+                logger.info(f"Media record created successfully for complaint {complain_id}")
+            except Exception as db_error:
+                logger.error(f"Database error while saving media record: {db_error}")
+                conn.rollback()
+            finally:
+                conn.close()
         else:
             logger.error(f"File upload failed for complaint {complain_id}: {filename}")
+            
     except Exception as e:
         logger.error(f"Error in upload_file_thread for file {getattr(file_obj, 'filename', 'unknown')}: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
 
+async def upload_file_async(file_obj: UploadFile, complain_id: int, user: str):
+    """Async version of file upload"""
+    try:
+        logger.info(f"Starting async file upload for complaint {complain_id}, file: {file_obj.filename}")
+        
+        # Read file content asynchronously
+        file_content = await file_obj.read()
+        logger.info(f"File content size: {len(file_content)} bytes")
+        
+        filename = file_obj.filename
+        content_type = file_obj.content_type
+        
+        logger.info(f"Processing file: {filename}, content_type: {content_type}")
+        
+        _, ext = os.path.splitext(filename)
+        ext = ext.lstrip('.').lower()
+        
+        # Determine media type
+        if content_type.startswith("image"):
+            media_type = "image"
+        elif content_type.startswith("video"):
+            media_type = "video"
+        else:
+            logger.warning(f"Unsupported media type for file: {filename}, content_type: {content_type}")
+            return False
+
+        logger.info(f"Uploading {media_type} file: {filename}")
+        
+        # Upload file
+        uploaded_url = process_media_file_upload(file_content, ext, complain_id, media_type)
+        
+        if uploaded_url:
+            logger.info(f"File uploaded successfully: {uploaded_url}")
+            
+            # Insert media record into database
+            conn = get_db_connection()
+            try:
+                query = """
+                    INSERT INTO rail_sathi_railsathicomplainmedia 
+                    (complain_id, media_type, media_url, created_by, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                now = datetime.now()
+                cursor = conn.cursor()
+                cursor.execute(query, (complain_id, media_type, uploaded_url, user, now, now))
+                conn.commit()
+                logger.info(f"Media record created successfully for complaint {complain_id}")
+                return True
+            except Exception as db_error:
+                logger.error(f"Database error while saving media record: {db_error}")
+                conn.rollback()
+                return False
+            finally:
+                conn.close()
+        else:
+            logger.error(f"File upload failed for complaint {complain_id}: {filename}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in upload_file_async for file {file_obj.filename}: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return False
+
+# Test function to verify setup
+def test_gcs_connection():
+    """Test GCS connection with .env configuration"""
+    try:
+        print("=== Testing GCS Connection ===")
+        print(f"Project ID: {PROJECT_ID}")
+        print(f"Bucket Name: {GCS_BUCKET_NAME}")
+        print(f"Credentials Path: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+        
+        client = get_gcs_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        bucket.reload()  # This will fail if no access
+        
+        print(f"✓ Successfully connected to bucket: {GCS_BUCKET_NAME}")
+        print(f"✓ Bucket location: {bucket.location}")
+        print(f"✓ Bucket storage class: {bucket.storage_class}")
+        return True
+    except Exception as e:
+        print(f"✗ Failed to connect to GCS bucket: {e}")
+        return False
+    
 def validate_and_process_train_data(complaint_data):
     """Validate and process train data"""
     conn = get_db_connection()

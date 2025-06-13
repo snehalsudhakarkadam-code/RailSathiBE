@@ -6,6 +6,7 @@ from jinja2 import Template
 from typing import Dict, List
 import os
 from database import get_db_connection, execute_query  # Fixed import
+from datetime import datetime
 
 EMAIL_SENDER = conf.MAIL_FROM
 
@@ -47,7 +48,16 @@ def send_plain_mail(subject: str, message: str, from_: str, to: List[str]):
 def send_passenger_complain_email(complain_details: Dict):
     """Send complaint email to war room users"""
     war_room_user_in_depot = []
+    s2_admin_users = []
+    railway_admin_users = []
+    assigned_users_list = []
+    
+    all_users_to_mail = []
+    
     train_depo = complain_details.get('train_depot', '')
+    train_no = str(complain_details.get('train_no', '')).strip()
+    complaint_date = complain_details.get('created_at', '')  # Ensure this is a date object or ISO string
+
     
     try:
         # Query to get war room users
@@ -71,8 +81,97 @@ def send_passenger_complain_email(complain_details: Dict):
         else:
             logging.info(f"No war room users found for depot {train_depo} in complaint {complain_details['complain_id']}")
             
+        s2_admin_query = """
+            SELECT u.* 
+            FROM user_onboarding_user u 
+            JOIN user_onboarding_roles ut ON u.user_type_id = ut.id 
+            WHERE ut.name = 's2 admin'
+        """
+        conn = get_db_connection()
+        s2_admin_users = execute_query(conn, s2_admin_query)
+        
+        railway_admin_query = """
+            SELECT u.* 
+            FROM user_onboarding_user u 
+            JOIN user_onboarding_roles ut ON u.user_type_id = ut.id 
+            WHERE ut.name = 'railway admin'
+        """
+        railway_admin_users = execute_query(conn, railway_admin_query)
+        
+        # Updated query to get train access users with better filtering
+        assigned_users_query = """
+            SELECT u.email, u.id, u.first_name, u.last_name, ta.train_details
+            FROM user_onboarding_user u
+            JOIN trains_trainaccess ta ON ta.user_id = u.id
+            WHERE ta.train_details IS NOT NULL 
+            AND ta.train_details != '{}'
+            AND ta.train_details != 'null'
+        """
+        conn = get_db_connection()
+        assigned_users_raw = execute_query(conn, assigned_users_query)
+        conn.close()
+        
+        # Get train number and complaint date for filtering
+        train_no = str(complain_details.get('train_number', '')).strip()
+        
+        # Handle created_at whether it's a string or datetime object
+        created_at_raw = complain_details.get('created_at', '')
+        try:
+            if isinstance(created_at_raw, datetime):
+                complaint_date = created_at_raw.date()
+            elif isinstance(created_at_raw, str):
+                if len(created_at_raw) >= 10:
+                    complaint_date_str = created_at_raw[:10]  # 'YYYY-MM-DD'
+                    complaint_date = datetime.strptime(complaint_date_str, "%Y-%m-%d").date()
+                else:
+                    complaint_date = None
+            else:
+                complaint_date = None
+        except (ValueError, TypeError):
+            complaint_date = None
+
+        if complaint_date and train_no:
+            for user in assigned_users_raw:
+                try:
+                    train_details_str = user.get('train_details', '{}')
+                    
+                    # Handle case where train_details might be a string or already parsed
+                    if isinstance(train_details_str, str):
+                        train_details = json.loads(train_details_str)
+                    else:
+                        train_details = train_details_str
+                    
+                    # Check if the train number exists in train_details
+                    if train_no in train_details:
+                        for access in train_details[train_no]:
+                            try:
+                                origin_date = datetime.strptime(access.get('origin_date', ''), "%Y-%m-%d").date()
+                                end_date_str = access.get('end_date', '')
+                                
+                                # Check if complaint date falls within the valid range
+                                if end_date_str == 'ongoing':
+                                    is_valid = complaint_date >= origin_date
+                                else:
+                                    end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                                    is_valid = origin_date <= complaint_date <= end_date
+                                
+                                if is_valid:
+                                    assigned_users_list.append(user)
+                                    break  # Only need one match per user
+                                    
+                            except (ValueError, TypeError) as date_error:
+                                logging.warning(f"Date parsing error for user {user.get('id')}: {date_error}")
+                                continue
+                                
+                except (json.JSONDecodeError, TypeError) as json_error:
+                    logging.warning(f"JSON parsing error for user {user.get('id')}: {json_error}")
+                    continue
+
+        
+        all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
+            
     except Exception as e:
-        logging.error(f"Error fetching war room users: {e}")
+        logging.error(f"Error fetching users: {e}")
 
     try:
         # Prepare email content
@@ -126,9 +225,6 @@ def send_passenger_complain_email(complain_details: Dict):
 
                 Train Depot    : {{ train_depo }}
 
-                You can access this complaint via the portal:
-                {{ protocol }}://{{ domain }}/admin/rail_sathi/railsathicomplain/{{ complain_id }}/change/
-
                 Regards,  
                 Team RailSathi
             """
@@ -139,12 +235,17 @@ def send_passenger_complain_email(complain_details: Dict):
         template = Template(template_content)
         message = template.render(context)
 
-        # Send emails to war room users
+        # Create list of unique email addresses for logging
+        assigned_user_emails = [user.get('email') for user in assigned_users_list if user.get('email')]
+        assigned_user_emails = list(dict.fromkeys(assigned_user_emails))  # Remove duplicates
+        
+        if assigned_user_emails:
+            logging.info(f"Train access users to be notified: {', '.join(assigned_user_emails)}")
+
+        # Send emails to war room users, s2 admins, railway admins, and train access users
         emails_sent = 0
-        # for user in war_room_user_in_depot:
-        if True:
-            # email = user.get('email', '')
-            email = "harshnmishra01@gmail.com"
+        for user in all_users_to_mail:
+            email = user.get('email', '')
             if email and not email.startswith("noemail") and '@' in email:
                 try:
                     success = send_plain_mail(subject, message, EMAIL_SENDER, [email])
@@ -156,20 +257,16 @@ def send_passenger_complain_email(complain_details: Dict):
                 except Exception as e:
                     logging.error(f"Error sending email to {email}: {e}")
 
-        # if not war_room_user_in_depot:
-        if emails_sent == 0:
+        if not all_users_to_mail:
+            logging.info(f"No users found for depot {train_depo} and train {train_no} in complaint {complain_details['complain_id']}")
+            return {"status": "success", "message": "No users found for this depot and train"}
         
-            # logging.info(f"No war room users found for depot 'train_depo' in complaint {complain_details['complain_id']}")
-            logging.info("No email was sent to any user.")
-            return {"status": "success", "message": "No war room users found for this depot"}
-        
-        return {"status": "success", "message": f"Emails sent to {emails_sent} war room users"}
+        return {"status": "success", "message": f"Emails sent to {emails_sent} users"}
         
     except Exception as e:
         logging.error(f"Error in send_passenger_complain_email: {e}")
         return {"status": "error", "message": str(e)}
-
-
+    
 def execute_sql_query(sql_query: str):
     """Execute a SELECT query safely"""
     if not sql_query.strip().lower().startswith("select"):
