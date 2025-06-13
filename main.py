@@ -13,7 +13,14 @@ from services import (
     upload_file_thread
 )
 
-app = FastAPI(title="Rail Sathi Complaint API", version="1.0.0")
+app = FastAPI(
+    title="Rail Sathi Complaint API",
+    description="API for handling rail complaints",
+    version="1.0.0",
+    openapi_url="/rs_microservice/openapi.json",  # Add the prefix here
+    docs_url="/rs_microservice/docs",             # Add the prefix here
+    redoc_url="/rs_microservice/redoc"            # Add the prefix here (optional)
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +37,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/rs_microservice/")
+async def root():
+    return {"message": "Rail Sathi Complaint API is running"}
 
 class RailSathiComplainMediaResponse(BaseModel):
     id: int
