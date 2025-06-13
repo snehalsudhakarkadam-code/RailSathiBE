@@ -38,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/rs_microservice/")
+@app.get("/rs_microservice")
 async def root():
     return {"message": "Rail Sathi Complaint API is running"}
 
@@ -104,7 +104,7 @@ class RailSathiComplainFlatResponse(BaseModel):
     updated_by: Optional[str]
     rail_sathi_complain_media_files: List[RailSathiComplainMediaResponse]
 
-@app.get("/complaint/get/{complain_id}", response_model=RailSathiComplainResponse)
+@app.get("/rs_microservice/complaint/get/{complain_id}", response_model=RailSathiComplainResponse)
 async def get_complaint(complain_id: int):
     """Get complaint by ID"""
     try:
@@ -121,7 +121,7 @@ async def get_complaint(complain_id: int):
         logger.error(f"Error getting complaint {complain_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/complaint/get/date/{date_str}", response_model=List[RailSathiComplainResponse])
+@app.get("/rs_microservice/complaint/get/date/{date_str}", response_model=List[RailSathiComplainResponse])
 async def get_complaints_by_date_endpoint(date_str: str, mobile_number: Optional[str] = None):
     """Get complaints by date and mobile number"""
     try:
@@ -152,7 +152,7 @@ async def get_complaints_by_date_endpoint(date_str: str, mobile_number: Optional
         logger.error(f"Error getting complaints by date {date_str}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/complaint/add", response_model=RailSathiComplainResponse)
+@app.post("/rs_microservice/complaint/add", response_model=RailSathiComplainResponse)
 async def create_complaint_endpoint_threaded(
     pnr_number: Optional[str] = Form(None),
     is_pnr_validated: Optional[str] = Form("not-attempted"),
@@ -260,7 +260,7 @@ async def create_complaint_endpoint_threaded(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@app.patch("/complaint/update/{complain_id}", response_model=RailSathiComplainResponse)
+@app.patch("/rs_microservice/complaint/update/{complain_id}", response_model=RailSathiComplainResponse)
 async def update_complaint_endpoint(
     complain_id: int,
     pnr_number: Optional[str] = Form(None),
@@ -379,7 +379,7 @@ async def update_complaint_endpoint(
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.put("/complaint/update/{complain_id}", response_model=RailSathiComplainResponse)
+@app.put("/rs_microservice/complaint/update/{complain_id}", response_model=RailSathiComplainResponse)
 async def replace_complaint_endpoint(
     complain_id: int,
     pnr_number: Optional[str] = Form(None),
@@ -500,7 +500,7 @@ async def replace_complaint_endpoint(
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.delete("/complaint/delete/{complain_id}")
+@app.delete("/rs_microservice/complaint/delete/{complain_id}")
 async def delete_complaint_endpoint(
     complain_id: int,
     name: str = Form(...),
@@ -535,7 +535,7 @@ async def delete_complaint_endpoint(
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.delete("/media/delete/{complain_id}")
+@app.delete("/rs_microservice/media/delete/{complain_id}")
 async def delete_complaint_media_endpoint(
     complain_id: int,
     name: str = Form(...),
@@ -590,7 +590,7 @@ def make_json_serializable(data):
     else:
         return data
 
-@app.get("/train_details/{train_no}")
+@app.get("/rs_microservice/train_details/{train_no}")
 def get_train_details(train_no: str):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
