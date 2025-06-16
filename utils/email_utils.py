@@ -7,6 +7,7 @@ from typing import Dict, List
 import os
 from database import get_db_connection, execute_query  # Fixed import
 from datetime import datetime
+from datetime import datetime
 
 EMAIL_SENDER = conf.MAIL_FROM
 
@@ -48,6 +49,12 @@ def send_plain_mail(subject: str, message: str, from_: str, to: List[str]):
 def send_passenger_complain_email(complain_details: Dict):
     """Send complaint email to war room users"""
     war_room_user_in_depot = []
+    s2_admin_users = []
+    railway_admin_users = []
+    assigned_users_list = []
+    
+    all_users_to_mail = []
+    
     s2_admin_users = []
     railway_admin_users = []
     assigned_users_list = []
@@ -174,6 +181,7 @@ def send_passenger_complain_email(complain_details: Dict):
      
     except Exception as e:
         logging.error(f"Error fetching users: {e}")
+        logging.error(f"Error fetching users: {e}")
 
     try:
         # Prepare email content
@@ -252,7 +260,17 @@ def send_passenger_complain_email(complain_details: Dict):
             logging.info(f"Train access users to be notified: {', '.join(assigned_user_emails)}")
 
         # Send emails to war room users, s2 admins, railway admins, and train access users
+        # Create list of unique email addresses for logging
+        assigned_user_emails = [user.get('email') for user in assigned_users_list if user.get('email')]
+        assigned_user_emails = list(dict.fromkeys(assigned_user_emails))  # Remove duplicates
+        
+        if assigned_user_emails:
+            logging.info(f"Train access users to be notified: {', '.join(assigned_user_emails)}")
+
+        # Send emails to war room users, s2 admins, railway admins, and train access users
         emails_sent = 0
+        for user in all_users_to_mail:
+            email = user.get('email', '')
         for user in all_users_to_mail:
             email = user.get('email', '')
             if email and not email.startswith("noemail") and '@' in email:
@@ -269,12 +287,17 @@ def send_passenger_complain_email(complain_details: Dict):
         if not all_users_to_mail:
             logging.info(f"No users found for depot {train_depo} and train {train_no} in complaint {complain_details['complain_id']}")
             return {"status": "success", "message": "No users found for this depot and train"}
+        if not all_users_to_mail:
+            logging.info(f"No users found for depot {train_depo} and train {train_no} in complaint {complain_details['complain_id']}")
+            return {"status": "success", "message": "No users found for this depot and train"}
         
+        return {"status": "success", "message": f"Emails sent to {emails_sent} users"}
         return {"status": "success", "message": f"Emails sent to {emails_sent} users"}
         
     except Exception as e:
         logging.error(f"Error in send_passenger_complain_email: {e}")
         return {"status": "error", "message": str(e)}
+    
     
 def execute_sql_query(sql_query: str):
     """Execute a SELECT query safely"""
