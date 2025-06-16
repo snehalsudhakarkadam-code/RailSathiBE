@@ -7,6 +7,7 @@ from typing import Dict, List
 import os
 from database import get_db_connection, execute_query  # Fixed import
 from datetime import datetime
+from datetime import datetime
 
 EMAIL_SENDER = conf.MAIL_FROM
 
@@ -54,9 +55,17 @@ def send_passenger_complain_email(complain_details: Dict):
     
     all_users_to_mail = []
     
+    s2_admin_users = []
+    railway_admin_users = []
+    assigned_users_list = []
+    
+    all_users_to_mail = []
+    
     train_depo = complain_details.get('train_depot', '')
     train_no = str(complain_details.get('train_no', '')).strip()
-    complaint_date = complain_details.get('created_at', '')  # Ensure this is a date object or ISO string
+    complaint_date = complain_details.get('created_at', '') 
+    journey_start_date = complain_details.get('date_of_journey', '')
+    complaint_created_at = datetime.now().strftime("%d %b %Y, %H:%M")
 
     
     try:
@@ -121,14 +130,14 @@ def send_passenger_complain_email(complain_details: Dict):
                 complaint_date = created_at_raw.date()
             elif isinstance(created_at_raw, str):
                 if len(created_at_raw) >= 10:
-                    complaint_date_str = created_at_raw[:10]  # 'YYYY-MM-DD'
-                    complaint_date = datetime.strptime(complaint_date_str, "%Y-%m-%d").date()
+                    complaint_date = datetime.strptime(created_at_raw, "%Y-%m-%d").date()
                 else:
                     complaint_date = None
             else:
                 complaint_date = None
         except (ValueError, TypeError):
             complaint_date = None
+            
 
         if complaint_date and train_no:
             for user in assigned_users_raw:
@@ -167,16 +176,18 @@ def send_passenger_complain_email(complain_details: Dict):
                     logging.warning(f"JSON parsing error for user {user.get('id')}: {json_error}")
                     continue
 
-        
+        # all_users_to_mail = [{"email": "writetohm19@gmail.com"}]
         all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
-            
+     
     except Exception as e:
+        logging.error(f"Error fetching users: {e}")
         logging.error(f"Error fetching users: {e}")
 
     try:
         # Prepare email content
         subject = f"Complaint received for train number: {complain_details['train_no']}"
         pnr_value = complain_details.get('pnr', 'PNR not provided by passenger')
+
         
         context = {
             "user_phone_number": complain_details.get('user_phone_number', ''),
@@ -187,9 +198,11 @@ def send_passenger_complain_email(complain_details: Dict):
             "berth": complain_details.get('berth', ''),
             "coach": complain_details.get('coach', ''),
             "complain_id": complain_details.get('complain_id', ''),
-            "created_at": complain_details.get('created_at', ''),
+            "created_at": complaint_created_at,
             "description": complain_details.get('description', ''),
             "train_depo": complain_details.get('train_depo', ''),
+            "complaint_date": complaint_date,
+            "start_date_of_journey": journey_start_date,
             'site_name': 'RailSathi',
         }
 
@@ -224,6 +237,10 @@ def send_passenger_complain_email(complain_details: Dict):
                 Description    : {{ description }}
 
                 Train Depot    : {{ train_depo }}
+                
+                Please take necessary action at the earliest.
+
+                This is an automated notification. Please do not reply to this email.
 
                 Regards,  
                 Team RailSathi
@@ -243,7 +260,17 @@ def send_passenger_complain_email(complain_details: Dict):
             logging.info(f"Train access users to be notified: {', '.join(assigned_user_emails)}")
 
         # Send emails to war room users, s2 admins, railway admins, and train access users
+        # Create list of unique email addresses for logging
+        assigned_user_emails = [user.get('email') for user in assigned_users_list if user.get('email')]
+        assigned_user_emails = list(dict.fromkeys(assigned_user_emails))  # Remove duplicates
+        
+        if assigned_user_emails:
+            logging.info(f"Train access users to be notified: {', '.join(assigned_user_emails)}")
+
+        # Send emails to war room users, s2 admins, railway admins, and train access users
         emails_sent = 0
+        for user in all_users_to_mail:
+            email = user.get('email', '')
         for user in all_users_to_mail:
             email = user.get('email', '')
             if email and not email.startswith("noemail") and '@' in email:
@@ -260,12 +287,17 @@ def send_passenger_complain_email(complain_details: Dict):
         if not all_users_to_mail:
             logging.info(f"No users found for depot {train_depo} and train {train_no} in complaint {complain_details['complain_id']}")
             return {"status": "success", "message": "No users found for this depot and train"}
+        if not all_users_to_mail:
+            logging.info(f"No users found for depot {train_depo} and train {train_no} in complaint {complain_details['complain_id']}")
+            return {"status": "success", "message": "No users found for this depot and train"}
         
+        return {"status": "success", "message": f"Emails sent to {emails_sent} users"}
         return {"status": "success", "message": f"Emails sent to {emails_sent} users"}
         
     except Exception as e:
         logging.error(f"Error in send_passenger_complain_email: {e}")
         return {"status": "error", "message": str(e)}
+    
     
 def execute_sql_query(sql_query: str):
     """Execute a SELECT query safely"""
