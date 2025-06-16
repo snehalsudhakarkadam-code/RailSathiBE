@@ -304,8 +304,11 @@ def create_complaint(complaint_data):
     try:
         # Validate and process train data
         complaint_data = validate_and_process_train_data(complaint_data)
+
+        date_of_journey_str = complaint_data.get('date_of_journey')
+        date_of_journey = datetime.strptime(date_of_journey_str, "%Y-%m-%d")
+
         
-        # Parse complain_date if it's a string
         complain_date = complaint_data.get('complain_date')
         if isinstance(complain_date, str):
             try:
@@ -314,6 +317,7 @@ def create_complaint(complaint_data):
                 complain_date = date.today()
         elif complain_date is None:
             complain_date = date.today()
+            
         
         # Insert complaint - PostgreSQL version with RETURNING clause
         query = """
@@ -381,9 +385,9 @@ def create_complaint(complaint_data):
                     'berth': complaint_data.get('berth_no', ''),
                     'coach': complaint_data.get('coach', ''),
                     'complain_id': complaint_id,
-                    'created_at': datetime.now(),
                     'description': complaint_data.get('complain_description', ''),
                     'train_depo': train_depo,
+                    'date_of_journey': date_of_journey.strftime("%d %b %Y"),
                 }
                 
                 logger.info(f"Sending email for complaint {complaint_id} to war room users")

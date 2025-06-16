@@ -56,7 +56,9 @@ def send_passenger_complain_email(complain_details: Dict):
     
     train_depo = complain_details.get('train_depot', '')
     train_no = str(complain_details.get('train_no', '')).strip()
-    complaint_date = complain_details.get('created_at', '')  # Ensure this is a date object or ISO string
+    complaint_date = complain_details.get('created_at', '') 
+    journey_start_date = complain_details.get('date_of_journey', '')
+    complaint_created_at = datetime.now().strftime("%d %b %Y, %H:%M")
 
     
     try:
@@ -121,14 +123,14 @@ def send_passenger_complain_email(complain_details: Dict):
                 complaint_date = created_at_raw.date()
             elif isinstance(created_at_raw, str):
                 if len(created_at_raw) >= 10:
-                    complaint_date_str = created_at_raw[:10]  # 'YYYY-MM-DD'
-                    complaint_date = datetime.strptime(complaint_date_str, "%Y-%m-%d").date()
+                    complaint_date = datetime.strptime(created_at_raw, "%Y-%m-%d").date()
                 else:
                     complaint_date = None
             else:
                 complaint_date = None
         except (ValueError, TypeError):
             complaint_date = None
+            
 
         if complaint_date and train_no:
             for user in assigned_users_raw:
@@ -167,9 +169,9 @@ def send_passenger_complain_email(complain_details: Dict):
                     logging.warning(f"JSON parsing error for user {user.get('id')}: {json_error}")
                     continue
 
-        
+        # all_users_to_mail = [{"email": "writetohm19@gmail.com"}]
         all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
-            
+     
     except Exception as e:
         logging.error(f"Error fetching users: {e}")
 
@@ -177,6 +179,7 @@ def send_passenger_complain_email(complain_details: Dict):
         # Prepare email content
         subject = f"Complaint received for train number: {complain_details['train_no']}"
         pnr_value = complain_details.get('pnr', 'PNR not provided by passenger')
+
         
         context = {
             "user_phone_number": complain_details.get('user_phone_number', ''),
@@ -187,9 +190,11 @@ def send_passenger_complain_email(complain_details: Dict):
             "berth": complain_details.get('berth', ''),
             "coach": complain_details.get('coach', ''),
             "complain_id": complain_details.get('complain_id', ''),
-            "created_at": complain_details.get('created_at', ''),
+            "created_at": complaint_created_at,
             "description": complain_details.get('description', ''),
             "train_depo": complain_details.get('train_depo', ''),
+            "complaint_date": complaint_date,
+            "start_date_of_journey": journey_start_date,
             'site_name': 'RailSathi',
         }
 
@@ -224,6 +229,10 @@ def send_passenger_complain_email(complain_details: Dict):
                 Description    : {{ description }}
 
                 Train Depot    : {{ train_depo }}
+                
+                Please take necessary action at the earliest.
+
+                This is an automated notification. Please do not reply to this email.
 
                 Regards,  
                 Team RailSathi
