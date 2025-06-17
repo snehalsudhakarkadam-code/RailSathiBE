@@ -176,6 +176,22 @@ async def create_complaint_endpoint_threaded(
     try:
         logger.info(f"Creating complaint for user: {name}")
         logger.info(f"Number of files received: {len(rail_sathi_complain_media_files)}")
+        logger.info(f"Request data: {{"
+                    f"pnr_number: {pnr_number}, "
+                    f"is_pnr_validated: {is_pnr_validated}, "
+                    f"name: {name}, "
+                    f"mobile_number: {mobile_number}, "
+                    f"complain_type: {complain_type}, "
+                    f"date_of_journey: {date_of_journey}, "
+                    f"complain_description: {complain_description}, "
+                    f"complain_date: {complain_date}, "
+                    f"complain_status: {complain_status}, "
+                    f"train_id: {train_id}, "
+                    f"train_number: {train_number}, "
+                    f"train_name: {train_name}, "
+                    f"coach: {coach}, "
+                    f"berth_no: {berth_no}"
+                    f"}}")
         
         # Prepare complaint data
         complaint_data = {
