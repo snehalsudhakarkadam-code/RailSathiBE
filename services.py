@@ -305,10 +305,19 @@ def create_complaint(complaint_data):
         # Validate and process train data
         complaint_data = validate_and_process_train_data(complaint_data)
 
+        # Handle date_of_journey - use current date if not provided or invalid
         date_of_journey_str = complaint_data.get('date_of_journey')
-        date_of_journey = datetime.strptime(date_of_journey_str, "%Y-%m-%d")
+        if date_of_journey_str:
+            try:
+                date_of_journey = datetime.strptime(date_of_journey_str, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                # If date format is invalid, use current date
+                date_of_journey = datetime.now()
+        else:
+            # If date is None or empty, use current date
+            date_of_journey = datetime.now()
 
-        
+        # Handle complain_date
         complain_date = complaint_data.get('complain_date')
         if isinstance(complain_date, str):
             try:
