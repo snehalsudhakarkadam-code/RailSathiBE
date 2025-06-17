@@ -154,6 +154,7 @@ async def get_complaints_by_date_endpoint(date_str: str, mobile_number: Optional
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/rs_microservice/complaint/add", response_model=RailSathiComplainResponse)
+@app.post("/rs_microservice/complaint/add/", response_model=RailSathiComplainResponse)
 async def create_complaint_endpoint_threaded(
     pnr_number: Optional[str] = Form(None),
     is_pnr_validated: Optional[str] = Form("not-attempted"),
