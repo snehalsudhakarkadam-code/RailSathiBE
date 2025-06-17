@@ -178,8 +178,8 @@ def send_passenger_complain_email(complain_details: Dict):
                     logging.warning(f"JSON parsing error for user {user.get('id')}: {json_error}")
                     continue
 
-        all_users_to_mail = [{"email": "writetohm19@gmail.com"}]
-        # all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
+        # all_users_to_mail = [{"email": "writetohm19@gmail.com"}]
+        all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
      
     except Exception as e:
         logging.error(f"Error fetching users: {e}")
