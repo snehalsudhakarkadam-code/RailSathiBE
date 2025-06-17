@@ -7,7 +7,7 @@ from typing import Dict, List
 import os
 from database import get_db_connection, execute_query  # Fixed import
 from datetime import datetime
-from datetime import datetime
+import pytz
 
 EMAIL_SENDER = conf.MAIL_FROM
 
@@ -65,7 +65,9 @@ def send_passenger_complain_email(complain_details: Dict):
     train_no = str(complain_details.get('train_no', '')).strip()
     complaint_date = complain_details.get('created_at', '') 
     journey_start_date = complain_details.get('date_of_journey', '')
-    complaint_created_at = datetime.now().strftime("%d %b %Y, %H:%M")
+
+    ist = pytz.timezone('Asia/Kolkata')
+    complaint_created_at = datetime.now(ist).strftime("%d %b %Y, %H:%M")
 
     
     try:
@@ -176,8 +178,8 @@ def send_passenger_complain_email(complain_details: Dict):
                     logging.warning(f"JSON parsing error for user {user.get('id')}: {json_error}")
                     continue
 
-        # all_users_to_mail = [{"email": "writetohm19@gmail.com"}]
-        all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
+        all_users_to_mail = [{"email": "writetohm19@gmail.com"}]
+        # all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
      
     except Exception as e:
         logging.error(f"Error fetching users: {e}")
