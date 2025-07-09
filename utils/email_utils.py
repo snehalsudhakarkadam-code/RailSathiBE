@@ -8,14 +8,16 @@ import os
 from database import get_db_connection, execute_query  # Fixed import
 from datetime import datetime
 import pytz
+import json
 
 EMAIL_SENDER = conf.MAIL_FROM
 
-def send_plain_mail(subject: str, message: str, from_: str, to: List[str]):
-    """Send plain text email"""
+def send_plain_mail(subject: str, message: str, from_: str, to: List[str], cc: List[str] = None):
+    """Send plain text email with CC support"""
     try:
         # Filter valid emails
         valid_emails = [email for email in to if email and not email.startswith("noemail")]
+        valid_cc_emails = [email for email in (cc or []) if email and not email.startswith("noemail")]
         
         if not valid_emails:
             logging.info("All emails were skipped - no valid recipients.")
@@ -25,6 +27,7 @@ def send_plain_mail(subject: str, message: str, from_: str, to: List[str]):
         email = MessageSchema(
             subject=subject,
             recipients=valid_emails,  # This should be a list, not a string
+            cc=valid_cc_emails if valid_cc_emails else None,  # Add CC support
             body=message,
             subtype="plain"
         )
@@ -38,7 +41,8 @@ def send_plain_mail(subject: str, message: str, from_: str, to: List[str]):
         loop.run_until_complete(fm.send_message(email))
         loop.close()
         
-        logging.info(f"Email sent successfully to: {', '.join(valid_emails)}")
+        cc_info = f" with CC to: {', '.join(valid_cc_emails)}" if valid_cc_emails else ""
+        logging.info(f"Email sent successfully to: {', '.join(valid_emails)}{cc_info}")
         return True
         
     except Exception as e:
@@ -47,19 +51,11 @@ def send_plain_mail(subject: str, message: str, from_: str, to: List[str]):
 
 
 def send_passenger_complain_email(complain_details: Dict):
-    """Send complaint email to war room users"""
+    """Send complaint email to war room users with CC to other users"""
     war_room_user_in_depot = []
     s2_admin_users = []
     railway_admin_users = []
     assigned_users_list = []
-    
-    all_users_to_mail = []
-    
-    s2_admin_users = []
-    railway_admin_users = []
-    assigned_users_list = []
-    
-    all_users_to_mail = []
     
     train_depo = complain_details.get('train_depot', '')
     train_no = str(complain_details.get('train_no', '')).strip()
@@ -71,26 +67,27 @@ def send_passenger_complain_email(complain_details: Dict):
 
     
     try:
-        # Query to get war room users
-        query = """
+        # Step 1: Get Depot for the train number
+        get_depot_query = f"""
+            SELECT "Depot" FROM trains_traindetails 
+            WHERE train_no = '{train_no}' LIMIT 1
+        """
+        conn = get_db_connection()
+        depot_result = execute_query(conn, get_depot_query)
+        conn.close()
+
+        train_depot_name = depot_result[0]['Depot'] if depot_result else ''
+
+        # Step 2: Fetch war room users whose `depo` matches the train depot
+        war_room_user_query = f"""
             SELECT u.* 
             FROM user_onboarding_user u 
             JOIN user_onboarding_roles ut ON u.user_type_id = ut.id 
-            WHERE ut.name = 'war room user'
+            WHERE ut.name = 'war room user' AND u.depo LIKE '%%{train_depot_name}%%'
         """
-        
         conn = get_db_connection()
-        war_room_users = execute_query(conn, query)
-        conn.close()
-
-        if war_room_users:
-            for user in war_room_users:
-                # Check if user's depot matches train depot
-                user_depo = user.get('depo', '')
-                if user_depo and train_depo and train_depo in user_depo:
-                    war_room_user_in_depot.append(user)
-        else:
-            logging.info(f"No war room users found for depot {train_depo} in complaint {complain_details['complain_id']}")
+        war_room_user_in_depot = execute_query(conn, war_room_user_query)
+        conn.close()  
             
         s2_admin_query = """
             SELECT u.* 
@@ -178,16 +175,22 @@ def send_passenger_complain_email(complain_details: Dict):
                     logging.warning(f"JSON parsing error for user {user.get('id')}: {json_error}")
                     continue
 
-        # all_users_to_mail = [{"email": "writetohm19@gmail.com"}]
+        # Combine all users and collect unique emails
         all_users_to_mail = war_room_user_in_depot + s2_admin_users + railway_admin_users + assigned_users_list
      
     except Exception as e:
         logging.error(f"Error fetching users: {e}")
-        logging.error(f"Error fetching users: {e}")
 
     try:
+        env = os.getenv('ENV')
         # Prepare email content
-        subject = f"Complaint received for train number: {complain_details['train_no']}"
+        if env == 'UAT':
+            subject = f"UAT | New Passenger Complaint Submitted - for Train: {complain_details['train_no']}(Commencement Date: {journey_start_date})"
+        elif env == 'PROD':
+            subject = f"New Passenger Complaint Submitted - for Train: {complain_details['train_no']}(Commencement Date: {journey_start_date})"
+        else:
+            subject = f"LOCAL | New Passenger Complaint Submitted - for Train: {complain_details['train_no']}(Commencement Date: {journey_start_date})"
+            
         pnr_value = complain_details.get('pnr', 'PNR not provided by passenger')
 
         
@@ -254,47 +257,38 @@ def send_passenger_complain_email(complain_details: Dict):
         template = Template(template_content)
         message = template.render(context)
 
-        # Create list of unique email addresses for logging
-        assigned_user_emails = [user.get('email') for user in assigned_users_list if user.get('email')]
-        assigned_user_emails = list(dict.fromkeys(assigned_user_emails))  # Remove duplicates
-        
-        if assigned_user_emails:
-            logging.info(f"Train access users to be notified: {', '.join(assigned_user_emails)}")
-
-        # Send emails to war room users, s2 admins, railway admins, and train access users
-        # Create list of unique email addresses for logging
-        assigned_user_emails = [user.get('email') for user in assigned_users_list if user.get('email')]
-        assigned_user_emails = list(dict.fromkeys(assigned_user_emails))  # Remove duplicates
-        
-        if assigned_user_emails:
-            logging.info(f"Train access users to be notified: {', '.join(assigned_user_emails)}")
-
-        # Send emails to war room users, s2 admins, railway admins, and train access users
-        emails_sent = 0
-        for user in all_users_to_mail:
-            email = user.get('email', '')
+        # Collect all unique email addresses
+        all_emails = []
         for user in all_users_to_mail:
             email = user.get('email', '')
             if email and not email.startswith("noemail") and '@' in email:
-                try:
-                    success = send_plain_mail(subject, message, EMAIL_SENDER, [email])
-                    if success:
-                        emails_sent += 1
-                        logging.info(f"Email sent to {email} for complaint {complain_details['complain_id']}")
-                    else:
-                        logging.error(f"Failed to send email to {email}")
-                except Exception as e:
-                    logging.error(f"Error sending email to {email}: {e}")
-
-        if not all_users_to_mail:
-            logging.info(f"No users found for depot {train_depo} and train {train_no} in complaint {complain_details['complain_id']}")
-            return {"status": "success", "message": "No users found for this depot and train"}
-        if not all_users_to_mail:
+                all_emails.append(email)
+        
+        # Remove duplicates while preserving order
+        unique_emails = list(dict.fromkeys(all_emails))
+        
+        if not unique_emails:
             logging.info(f"No users found for depot {train_depo} and train {train_no} in complaint {complain_details['complain_id']}")
             return {"status": "success", "message": "No users found for this depot and train"}
         
-        return {"status": "success", "message": f"Emails sent to {emails_sent} users"}
-        return {"status": "success", "message": f"Emails sent to {emails_sent} users"}
+        # Send single email with first recipient as TO and rest as CC
+        primary_recipient = [unique_emails[0]]
+        cc_recipients = unique_emails[1:] if len(unique_emails) > 1 else []
+        
+        try:
+            success = send_plain_mail(subject, message, EMAIL_SENDER, primary_recipient, cc_recipients)
+            if success:
+                logging.info(f"Email sent for complaint {complain_details['complain_id']} to {len(unique_emails)} recipients")
+                logging.info(f"Primary recipient: {primary_recipient[0]}")
+                if cc_recipients:
+                    logging.info(f"CC recipients: {', '.join(cc_recipients)}")
+                return {"status": "success", "message": f"Email sent to {len(unique_emails)} users"}
+            else:
+                logging.error(f"Failed to send email for complaint {complain_details['complain_id']}")
+                return {"status": "error", "message": "Failed to send email"}
+        except Exception as e:
+            logging.error(f"Error sending email for complaint {complain_details['complain_id']}: {e}")
+            return {"status": "error", "message": str(e)}
         
     except Exception as e:
         logging.error(f"Error in send_passenger_complain_email: {e}")
